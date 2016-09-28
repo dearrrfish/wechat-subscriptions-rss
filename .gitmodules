@@ -1,0 +1,3 @@
+[submodule "WechatSogou"]
+	path = WechatSogou
+	url = github:Chyroc/WechatSogou
