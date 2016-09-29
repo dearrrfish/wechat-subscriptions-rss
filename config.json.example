@@ -10,7 +10,7 @@
     },
     "feed": {
         "path": "feeds/",
-        "max": "40",
+        "max": 40,
         "messageTypes": ["TEXT", "IMAGE", "VOICE","POST", "VIDEO"]
     }
 }

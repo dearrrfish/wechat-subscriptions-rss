@@ -120,7 +120,7 @@ def generate_feed(wid, conn, message_config, feed_config):
         c.execute(
             'SELECT * FROM messages WHERE `wechat_id`=%s AND `type` IN %s ORDER BY datetime DESC, id LIMIT %s',
             # TODO Support other message types
-            # (wid, feed_config['messageTypes'], feed_config['max'])
+            # (wid, feed_config['message_types'], feed_config['max'])
             (wid, ['POST'], feed_config['max'])
         )
 
@@ -172,14 +172,15 @@ if __name__ == '__main__':
             config = json.load(fd)
 
         mysql_config = config['mysql']
-        message_config = config.get('message', {
-                'path': 'messages/',
-            })
-        feed_config = config.get('feed', {
-                'path': 'feeds/',
-                'max': 40,
-                'messageTypes': ['POST']
-            })
+
+        message_config = config.get('message', {})
+        message_config['path'] = message_config.get('path', 'messages/')
+
+        feed_config = config.get('feed', {})
+        feed_config['path'] = feed_config.get('path', 'feeds/')
+        feed_config['max'] = int(feed_config.get('max', 40))
+        feed_config['message_types'] = feed_config.get('messageTypes', ['POST'])
+        feed_config['force'] = feed_config.get('force', False)
     except:
         print('Failed to load `config.json` or invalid configuration.')
         sys.exit(2)
@@ -196,7 +197,7 @@ if __name__ == '__main__':
 
     try:
         has_new_messages = retrieve_messages(wid, conn, message_config)
-        if has_new_messages:
+        if  has_new_messages or feed_config['force']:
             print("Generating feed...")
             generate_feed(wid, conn, message_config, feed_config)
         else:
