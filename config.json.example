@@ -1,0 +1,16 @@
+{
+    "mysql": {
+        "host": "localhost",
+        "user": "root",
+        "password": "*******",
+        "db": "wechat"
+    },
+    "message": {
+        "path": "messages/"
+    },
+    "feed": {
+        "path": "feeds/",
+        "max": "40",
+        "messageTypes": ["TEXT", "IMAGE", "VOICE","POST", "VIDEO"]
+    }
+}

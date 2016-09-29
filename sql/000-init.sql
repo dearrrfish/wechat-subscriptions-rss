@@ -14,7 +14,7 @@ CHARACTER SET utf8 COLLATE utf8_general_ci
 COMMENT = 'Storage of posts in Wechat subscriptions.';
 
 CREATE TABLE `wechat`.`messages` (
-    `id` int(16) NOT NULL COMMENT 'Group message ID.',
+    `id` varchar(32) NOT NULL COMMENT 'Group message ID.',
     `wechat_id` varchar(100) NOT NULL COMMENT 'Wechat ID of subscription post.',
     `datetime` int(10) NOT NULL COMMENT 'Message timestamp.',
     `type` enum('TEXT', 'IMAGE', 'VOICE', 'POST', 'VIDEO') NOT NULL COMMENT 'Message type',

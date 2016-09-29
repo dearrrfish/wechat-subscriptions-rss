@@ -12,10 +12,7 @@ sys.path.append('./WechatSogou')
 from wechatsogou.tools import *
 from wechatsogou import *
 
-message_path = 'messages/'
-feed_path = 'feeds/'
-
-def retrieve_messages(wid, conn):
+def retrieve_messages(wid, conn, message_config):
     has_new_messages = False
     messages = []
     wechats = WechatSogouApi()
@@ -45,13 +42,13 @@ def retrieve_messages(wid, conn):
         print("Account exists. Retrieving recent messages...")
         messages = wechats.get_gzh_message(wechatid=wid)
 
-    # print(messages)
+    print(json.dumps(messages))
     print("Num of messages: ", len(messages))
 
     for m in messages:
         exists_message = False
         # Message ID
-        mid = m['qunfa_id']
+        mid = "%s-%s-%s" % (m['qunfa_id'], m.get('main', 0), m.get('fileid', 0))
         with conn.cursor() as c:
             # Lookup in database for existing message
             c.execute('SELECT id FROM `messages` WHERE wechat_id=%s AND id=%s', (wid, mid))
@@ -98,7 +95,7 @@ def retrieve_messages(wid, conn):
             message['thumb'] = m.get('thumb', '')
             message['src'] = m.get('video_src', '')
 
-        filename = message_path + wid + '_' + str(mid) + '.json'
+        filename = message_config['path'] + wid + '_' + mid + '.json'
         with open(filename, 'w') as fd:
             json.dump(message, fd)
 
@@ -114,15 +111,17 @@ def retrieve_messages(wid, conn):
     return has_new_messages
 
 
-def generate_feed(wid, conn, max=40, message_types=['POST']):
+def generate_feed(wid, conn, message_config, feed_config):
     with conn.cursor() as c:
         c.execute('SELECT * FROM accounts WHERE `id`=%s LIMIT 1', (wid))
         account = c.fetchone()
 
     with conn.cursor() as c:
         c.execute(
-            'SELECT * FROM messages WHERE `wechat_id`=%s AND `type` IN %s ORDER BY datetime DESC LIMIT %s',
-            (wid, message_types, max)
+            'SELECT * FROM messages WHERE `wechat_id`=%s AND `type` IN %s ORDER BY datetime DESC, id LIMIT %s',
+            # TODO Support other message types
+            # (wid, feed_config['messageTypes'], feed_config['max'])
+            (wid, ['POST'], feed_config['max'])
         )
 
         fg = FeedGenerator()
@@ -135,7 +134,7 @@ def generate_feed(wid, conn, max=40, message_types=['POST']):
         message = c.fetchone()
         while message != None:
             mid = message['id']
-            filename = message_path + wid + '_' + str(mid) + '.json'
+            filename = message_config['path'] + wid + '_' + mid + '.json'
             with open(filename, 'r') as fd:
                 message_details = json.load(fd)
 
@@ -156,32 +155,53 @@ def generate_feed(wid, conn, max=40, message_types=['POST']):
             message = c.fetchone()
 
         atom_feed = fg.atom_str(pretty=True)
-        atom_filename = feed_path + 'wechat-' + wid + '.atom'
+        atom_filename = feed_config['path'] + 'wechat-' + wid + '.atom'
         fg.atom_file(atom_filename)
 
 
 if __name__ == '__main__':
-    wid = sys.argv[1]
-    if not wid:
+    try:
+        wid = sys.argv[1]
+        print("wechat_id = %s" % (wid))
+    except:
         print('No wechatid provided.')
         sys.exit(2)
 
+    try:
+        with open('config.json', 'r') as fd:
+            config = json.load(fd)
+
+        mysql_config = config['mysql']
+        message_config = config.get('message', {
+                'path': 'messages/',
+            })
+        feed_config = config.get('feed', {
+                'path': 'feeds/',
+                'max': 40,
+                'messageTypes': ['POST']
+            })
+    except:
+        print('Failed to load `config.json` or invalid configuration.')
+        sys.exit(2)
+
     conn = pymysql.connect(
-            host='localhost',
-            user='root',
-            passwd='momo88415',
-            db='wechat',
+            host=mysql_config['host'],
+            user=mysql_config['user'],
+            passwd=mysql_config['password'],
+            db=mysql_config['db'],
             charset='utf8mb4',
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=True
            )
 
-    print("wid = %s" % (wid))
     try:
-        has_new_messages = retrieve_messages(wid, conn)
-        # if has_new_messages:
-        print("Generating feed...")
-        generate_feed(wid, conn)
+        has_new_messages = retrieve_messages(wid, conn, message_config)
+        if has_new_messages:
+            print("Generating feed...")
+            generate_feed(wid, conn, message_config, feed_config)
+        else:
+            print("No new messages.")
 
     finally:
         conn.close()
+
