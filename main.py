@@ -101,59 +101,69 @@ def retrieve_messages(wid, config):
             c.execute('SELECT id FROM `messages` WHERE wechat_id=%s AND id=%s', (wid, mid))
             exists_message = c.fetchone() != None
 
-        if exists_message:
+        filename = path.join(_get_abspath(config.get('message_path', 'messages/'), cur_dir),
+                             wid + '_' + mid + '.json')
+
+        if exists_message and path.isfile(filename):
             console.warn('[%s] message exists, skip.' % mid)
             continue
 
         # New message
-        has_new_messages = True
         mdatetime = m['datetime']
         mtype = m['type']
         message = {}
-        if mtype == '1':
-            message_type = 'TEXT'
-            message['content'] = m.get('content', '')
-        elif mtype == '3':
-            message_type = 'IMAGE'
-            message['url'] = m.get('img_url', '')
-        elif mtype == '34':
-            message_type = 'VOICE'
-            message['length'] = m.get('play_length', '')
-            message['fileId'] = m.get('fileid', '')
-            message['src'] = m.get('audio_src', '')
-        elif mtype == '49':
-            message_type = 'POST'
-            message['main'] = m.get('main', '')
-            message['title'] = m.get('title', '')
-            message['digest'] = m.get('digest', '')
-            message['fileId'] = m.get('fileid', '')
-            message['author'] = m.get('author', '')
-            message['cover'] = m.get('cover', '')
-            # message['copyright'] = m.get('copyright', '')
-            # Retrieve HTML content and permanent link of post
-            post = wechats.deal_article(m.get('content_url', ''))
-            # print(post)
-            message['content'] = post['content_html']
-            message['url'] = post['yuan']
+        try:
+            if mtype == '1':
+                message_type = 'TEXT'
+                message['content'] = m.get('content', '')
+            elif mtype == '3':
+                message_type = 'IMAGE'
+                message['url'] = m.get('img_url', '')
+            elif mtype == '34':
+                message_type = 'VOICE'
+                message['length'] = m.get('play_length', '')
+                message['fileId'] = m.get('fileid', '')
+                message['src'] = m.get('audio_src', '')
+            elif mtype == '49':
+                message_type = 'POST'
+                message['main'] = m.get('main', '')
+                message['title'] = m.get('title', '')
+                message['digest'] = m.get('digest', '')
+                message['fileId'] = m.get('fileid', '')
+                message['author'] = m.get('author', '')
+                message['cover'] = m.get('cover', '')
+                # message['copyright'] = m.get('copyright', '')
+                # Retrieve HTML content and permanent link of post
+                post = wechats.deal_article(m.get('content_url', ''))
+                # print(post)
+                message['content'] = post['content_html'].replace('&amp;', '&').replace('data-src', 'src')
+                message['url'] = post['yuan']
 
-        elif mtype == '62':
-            message_type = 'VIDEO'
-            message['videoId'] = m.get('cnd_videoid', '')
-            message['thumb'] = m.get('thumb', '')
-            message['src'] = m.get('video_src', '')
+            elif mtype == '62':
+                message_type = 'VIDEO'
+                message['videoId'] = m.get('cnd_videoid', '')
+                message['thumb'] = m.get('thumb', '')
+                message['src'] = m.get('video_src', '')
+            else:
+                console.error('[%s] !! Unsupported message type: %s' % (mid, mtype))
+                continue
 
-        filename = path.join(_get_abspath(config.get('message_path', 'messages/'), cur_dir),
-                             wid + '_' + mid + '.json')
+        except:
+            console.error('[%s] !! Failed to parse message.' % mid)
+            continue
+
         with open(filename, 'w') as fd:
             json.dump(message, fd)
 
         # Store in database
         with conn.cursor() as c:
             c.execute(
-                'INSERT INTO `messages` (id, wechat_id, datetime, type) VALUES (%s, %s, %s, %s)',
+                'INSERT INTO `messages` (id, wechat_id, datetime, type) VALUES (%s, %s, %s, %s) ' +
+                'ON DUPLICATE KEY UPDATE wechat_id=wechat_id, datetime=datetime, type=type',
                 (mid, wid, mdatetime, message_type)
             )
 
+        has_new_messages = True
         console.log("[%s] >> %s" % (mid, filename))
 
     return has_new_messages
@@ -169,15 +179,14 @@ def generate_feed(wid, config):
         c.execute(
             'SELECT * FROM messages WHERE `wechat_id`=%s AND `type` IN %s ORDER BY datetime DESC, id LIMIT %s',
             # TODO Support other message types
-            # (wid, config['message_types'], config['feed_max'])
-            (wid, ['POST'], config.get('feed_max', 40))
+            (wid, ['POST'], config.get('feed_max', 20))
         )
 
         fg = FeedGenerator()
         fg.id('wechat-%s' % wid)
         fg.title(account['name'])
         fg.subtitle(account['intro'])
-        fg.link(href='http://localhost/feeds/wechat-%s.atom' % wid, rel='self')
+        fg.link(href='http://feeds.feedburner.com/wechat-%s' % wid, rel='self')
         fg.logo(account['image'])
 
         message = c.fetchone()
@@ -204,11 +213,11 @@ def generate_feed(wid, config):
 
             message = c.fetchone()
 
-        atom_feed = fg.atom_str(pretty=True)
-        atom_filename = path.join(_get_abspath(config.get('feed_path', 'feeds/'), cur_dir),
-                                  'wechat-' + wid + '.atom')
-        fg.atom_file(atom_filename)
-        console.log('Output RSS feed to %s' % atom_filename)
+        rss_feed = fg.rss_str(pretty=True)
+        rss_filename = path.join(_get_abspath(config.get('feed_path', 'feeds/'), cur_dir),
+                                  'wechat-' + wid + '.xml')
+        fg.rss_file(rss_filename)
+        console.log('Output RSS feed to %s' % rss_filename)
 
 
 def _parse_argv():
