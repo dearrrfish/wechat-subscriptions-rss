@@ -136,7 +136,7 @@ def retrieve_messages(wid, config):
                 # Retrieve HTML content and permanent link of post
                 post = wechats.deal_article(m.get('content_url', ''))
                 # print(post)
-                message['content'] = post['content_html'].replace('&amp;', '&').replace('data-src', 'src')
+                message['content'] = post['content_html'].replace('amp;', '').replace('data-src', 'src')
                 message['url'] = post['yuan']
 
             elif mtype == '62':
