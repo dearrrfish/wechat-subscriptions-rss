@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import sys, getopt
+import sys, getopt, syslog
 from os import path
 import os
 import json, re
@@ -9,8 +9,7 @@ from datetime import datetime
 import dateutil.tz
 from feedgen.feed import FeedGenerator
 
-global cur_dir, script_dir, conn, wechats
-
+syslog_enabled = False
 cur_dir = os.getcwd()
 script_dir, script_filename = path.split(path.abspath(sys.argv[0]))
 sys.path.append(path.join(script_dir, 'WechatSogou'))
@@ -29,32 +28,38 @@ class console:
     # UNDERLINE = '\033[4m'
 
     def log(msg, end='\n', wrap=['', '']):
-        msg = _wrap(msg, wrap)
-        print(msg, end=end)
+        msg = console._wrap(msg, wrap)
+        console._print(msg, end=end)
 
     def success(msg, end='\n', wrap=['', '']):
         OKGREEN = '\033[92m'
         ENDC = '\033[0m'
-        msg = OKGREEN + _wrap(msg, wrap) + ENDC
-        print(msg, end=end)
+        msg = OKGREEN + console._wrap(msg, wrap) + ENDC
+        console._print(msg, end=end)
 
     def warn(msg, end='\n', wrap=['', '']):
         WARNING = '\033[93m'
         ENDC = '\033[0m'
-        msg = WARNING + _wrap(msg, wrap) + ENDC
-        print(msg, end=end)
+        msg = WARNING + console._wrap(msg, wrap) + ENDC
+        console._print(msg, end=end)
 
     def error(msg, end='\n', wrap=['', '']):
         FAIL = '\033[91m'
         ENDC = '\033[0m'
-        msg = FAIL + _wrap(msg, wrap) + ENDC
+        msg = FAIL + console._wrap(msg, wrap) + ENDC
+        console._print(msg, end=end)
+
+    def _print(msg, end='\n'):
+        global syslog_enabled
+        if syslog_enabled:
+            syslog.syslog(msg)
         print(msg, end=end)
 
-def _wrap(msg, wrap=['', '']):
-    if isinstance(wrap, str):
-        mid_index = int(len(wrap)/2)
-        wrap = [wrap[0:mid_index], wrap[mid_index:]]
-    return wrap[0] + msg + wrap[1]
+    def _wrap(msg, wrap=['', '']):
+        if isinstance(wrap, str):
+            mid_index = int(len(wrap)/2)
+            wrap = [wrap[0:mid_index], wrap[mid_index:]]
+        return wrap[0] + msg + wrap[1]
 
 def retrieve_messages(wid, config):
     global conn, wechats, cur_dir
@@ -243,7 +248,8 @@ def _parse_argv():
                 'hc:',
                 ['help', 'config=', 'db-host=', 'db-user=', 'db-password=', 'db-database=', \
                  'message-path=', 'message-types=', 'message-ignore-check', \
-                 'feed-max=', 'feed-path=', 'feed-ignore-check']
+                 'feed-max=', 'feed-path=', 'feed-ignore-check', \
+                 'syslog']
             )
 
     except getopt.GetoptError:
@@ -283,6 +289,8 @@ def _parse_argv():
             argv_config['feed_max'] = int(arg)
         elif opt == '--feed-ignore-check':
             argv_config['feed_ignore_check'] = True
+        elif opt == '--syslog':
+            argv_config['syslog'] = True
 
     if len(wids) == 0:
         _show_help('No wechat id was given.')
@@ -309,9 +317,10 @@ def _show_help(msg=''):
 
 
 if __name__ == '__main__':
-    global conn, wechats
-
     config, wids = _parse_argv()
+    if config.get('syslog'):
+        syslog_enabled = True
+        syslog.openlog('wechat-rss', syslog.LOG_PID)
 
     conn = pymysql.connect(
             host=config.get('db_host', 'localhost'),
@@ -335,4 +344,6 @@ if __name__ == '__main__':
 
     finally:
         conn.close()
+        if syslog_enabled:
+            syslog.closelog()
 
