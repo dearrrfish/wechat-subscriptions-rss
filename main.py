@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import json
 import sys, getopt
 from os import path
 import os
+import json, re
 import pymysql.cursors
 from datetime import datetime
 import dateutil.tz
@@ -136,7 +136,7 @@ def retrieve_messages(wid, config):
                 # Retrieve HTML content and permanent link of post
                 post = wechats.deal_article(m.get('content_url', ''))
                 # print(post)
-                message['content'] = post['content_html'].replace('amp;', '').replace('data-src', 'src')
+                message['content'] = post['content_html']
                 message['url'] = post['yuan']
 
             elif mtype == '62':
@@ -201,12 +201,19 @@ def generate_feed(wid, config):
                 fe = fg.add_entry()
                 fe.id(message_details['url'])
                 fe.title(message_details['title'])
-                fe.author(name=message_details['author'])
+                fe.author(name=wid, email=message_details['author'])
                 fe.link(href=message_details['url'])
-                fe.content(message_details['content'])
+
+                content = re.sub(r'(amp;|\s*data-[\w-]+="[^"]*"|\s*line-height:[^;]*;)', '',
+                                 message_details['content'].replace('data-src', 'src'),
+                                 flags=re.IGNORECASE)
+                if message_details['cover'] != '':
+                    content = '<img src="'+ message_details['cover'] + '" />' + content
+                fe.content(content)
 
                 dt = datetime.fromtimestamp(message['datetime'], dateutil.tz.gettz(name='Asia/Shanghai'))
-                fe.updated(dt)
+                # fe.updated(dt)
+                fe.pubdate(dt)
 
             else:
                 console.log("[%s] message does not exist << %s", (mid, filename))
@@ -235,7 +242,9 @@ def _parse_argv():
         opts, wids = getopt.getopt(
                 sys.argv[1:],
                 'hc:',
-                ['help', 'config=', 'db-host=', 'db-user=', 'db-password=', 'db-database=', 'message-path=', 'message-types=', 'feed-max=', 'feed-path=', 'feed-ignore-check']
+                ['help', 'config=', 'db-host=', 'db-user=', 'db-password=', 'db-database=', \
+                 'message-path=', 'message-types=', 'message-ignore-check', \
+                 'feed-max=', 'feed-path=', 'feed-ignore-check']
             )
 
     except getopt.GetoptError:
@@ -267,6 +276,8 @@ def _parse_argv():
             argv_config['message_path'] = _get_abspath(arg, cur_dir)
         elif opt == '--message-types':
             argv_config['message_types'] = argv.upper().split(',')
+        elif opt == '--message-ignore-check':
+            argv_config['message_ignore_check'] = True
         elif opt == '--feed-path':
             argv_config['feed_path'] = _get_abspath(arg, cur_dir)
         elif opt == '--feed-max':
@@ -316,7 +327,7 @@ if __name__ == '__main__':
 
     try:
         for wid in wids:
-            has_new_messages = retrieve_messages(wid, config)
+            has_new_messages = config.get('message_ignore_check', False) or retrieve_messages(wid, config)
             if  has_new_messages or config.get('feed_ignore_check', False):
                 console.log("Generating feed for wechat_id=%s..." % wid)
                 generate_feed(wid, config)
