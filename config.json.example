@@ -1,16 +1,11 @@
 {
-    "mysql": {
-        "host": "localhost",
-        "user": "root",
-        "password": "*******",
-        "db": "wechat"
-    },
-    "message": {
-        "path": "messages/"
-    },
-    "feed": {
-        "path": "feeds/",
-        "max": 40,
-        "messageTypes": ["TEXT", "IMAGE", "VOICE","POST", "VIDEO"]
-    }
+    "db_host": "localhost",
+    "db_user": "root",
+    "db_password": "*******",
+    "db_database": "wechat",
+    "message_path": "messages/",
+    "message_types": ["TEXT", "IMAGE", "VOICE","POST", "VIDEO"],
+    "feed_path": "feeds/",
+    "feed_max": 40,
+    "feed_ignore_check": false
 }

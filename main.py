@@ -1,36 +1,81 @@
 #!/usr/bin/env python3
 
 import json
-import sys
+import sys, getopt
+from os import path
+import os
 import pymysql.cursors
 from datetime import datetime
 import dateutil.tz
 from feedgen.feed import FeedGenerator
 
-sys.path.append('./WechatSogou')
+global cur_dir, script_dir, conn, wechats
+
+cur_dir = os.getcwd()
+script_dir, script_filename = path.split(path.abspath(sys.argv[0]))
+sys.path.append(path.join(script_dir, 'WechatSogou'))
 
 from wechatsogou.tools import *
 from wechatsogou import *
 
-def retrieve_messages(wid, conn, message_config):
+class console:
+    # HEADER = '\033[95m'
+    # OKBLUE = '\033[94m'
+    # OKGREEN = '\033[92m'
+    # WARNING = '\033[93m'
+    # FAIL = '\033[91m'
+    # ENDC = '\033[0m'
+    # BOLD = '\033[1m'
+    # UNDERLINE = '\033[4m'
+
+    def log(msg, end='\n', wrap=['', '']):
+        msg = _wrap(msg, wrap)
+        print(msg, end=end)
+
+    def success(msg, end='\n', wrap=['', '']):
+        OKGREEN = '\033[92m'
+        ENDC = '\033[0m'
+        msg = OKGREEN + _wrap(msg, wrap) + ENDC
+        print(msg, end=end)
+
+    def warn(msg, end='\n', wrap=['', '']):
+        WARNING = '\033[93m'
+        ENDC = '\033[0m'
+        msg = WARNING + _wrap(msg, wrap) + ENDC
+        print(msg, end=end)
+
+    def error(msg, end='\n', wrap=['', '']):
+        FAIL = '\033[91m'
+        ENDC = '\033[0m'
+        msg = FAIL + _wrap(msg, wrap) + ENDC
+        print(msg, end=end)
+
+def _wrap(msg, wrap=['', '']):
+    if isinstance(wrap, str):
+        mid_index = int(len(wrap)/2)
+        wrap = [wrap[0:mid_index], wrap[mid_index:]]
+    return wrap[0] + msg + wrap[1]
+
+def retrieve_messages(wid, config):
+    global conn, wechats, cur_dir
     has_new_messages = False
     messages = []
-    wechats = WechatSogouApi()
 
-    exists_account = False
-    print("Searching for existing account...")
+    console.log("Looking for existing account in database...", end='')
     with conn.cursor() as c:
         c.execute('SELECT id FROM `accounts` WHERE id = %s', (wid))
         exists_account = c.fetchone() != None
 
     if not exists_account:
-        print("Not found. Retrieving account info and recent messages...")
+        console.error('NOT FOUND', wrap='[]')
+        console.log('Retrieving account info and recent messages...', end='')
         # Retrieve both account and recent messages
         messages_and_info = wechats.get_gzh_message_and_info(wechatid=wid)
         # print(messages_and_info)
         messages = messages_and_info['gzh_messages']
         # Store account info in database
         gzh_info = messages_and_info['gzh_info']
+        console.success('READY', wrap='[]')
 
         with conn.cursor() as c:
             c.execute(
@@ -39,11 +84,13 @@ def retrieve_messages(wid, conn, message_config):
             )
 
     else:
-        print("Account exists. Retrieving recent messages...")
+        console.success('FOUND', wrap='[]')
+        console.log("Retrieving recent messages...", end='')
         messages = wechats.get_gzh_message(wechatid=wid)
+        console.success('READY', wrap='[]')
 
-    print(json.dumps(messages))
-    print("Num of messages: ", len(messages))
+    # print(json.dumps(messages))
+    console.log('Processing %d messages...' % len(messages))
 
     for m in messages:
         exists_message = False
@@ -55,7 +102,7 @@ def retrieve_messages(wid, conn, message_config):
             exists_message = c.fetchone() != None
 
         if exists_message:
-            print("[%s] message exists, skip." % (mid))
+            console.warn('[%s] message exists, skip.' % mid)
             continue
 
         # New message
@@ -95,7 +142,7 @@ def retrieve_messages(wid, conn, message_config):
             message['thumb'] = m.get('thumb', '')
             message['src'] = m.get('video_src', '')
 
-        filename = message_config['path'] + wid + '_' + mid + '.json'
+        filename = _get_abspath(config.get('message_path', 'messages/'), cur_dir) + wid + '_' + mid + '.json'
         with open(filename, 'w') as fd:
             json.dump(message, fd)
 
@@ -106,12 +153,13 @@ def retrieve_messages(wid, conn, message_config):
                 (mid, wid, mdatetime, message_type)
             )
 
-        print("[%s] >> %s" % (mid, filename))
+        console.log("[%s] >> %s" % (mid, filename))
 
     return has_new_messages
 
 
-def generate_feed(wid, conn, message_config, feed_config):
+def generate_feed(wid, config):
+    global conn, wechats, cur_dir
     with conn.cursor() as c:
         c.execute('SELECT * FROM accounts WHERE `id`=%s LIMIT 1', (wid))
         account = c.fetchone()
@@ -120,8 +168,8 @@ def generate_feed(wid, conn, message_config, feed_config):
         c.execute(
             'SELECT * FROM messages WHERE `wechat_id`=%s AND `type` IN %s ORDER BY datetime DESC, id LIMIT %s',
             # TODO Support other message types
-            # (wid, feed_config['message_types'], feed_config['max'])
-            (wid, ['POST'], feed_config['max'])
+            # (wid, config['message_types'], config['feed_max'])
+            (wid, ['POST'], config.get('feed_max', 40))
         )
 
         fg = FeedGenerator()
@@ -134,7 +182,7 @@ def generate_feed(wid, conn, message_config, feed_config):
         message = c.fetchone()
         while message != None:
             mid = message['id']
-            filename = message_config['path'] + wid + '_' + mid + '.json'
+            filename = _get_abspath(config.get('message_path', 'messages/'), cur_dir) + wid + '_' + mid + '.json'
             with open(filename, 'r') as fd:
                 message_details = json.load(fd)
 
@@ -150,58 +198,119 @@ def generate_feed(wid, conn, message_config, feed_config):
                 fe.updated(dt)
 
             else:
-                print("[%s] message does not exist << %s", (mid, filename))
+                console.log("[%s] message does not exist << %s", (mid, filename))
 
             message = c.fetchone()
 
         atom_feed = fg.atom_str(pretty=True)
-        atom_filename = feed_config['path'] + 'wechat-' + wid + '.atom'
+        atom_filename = _get_abspath(config.get('feed_path', 'feeds/'), cur_dir) + 'wechat-' + wid + '.atom'
         fg.atom_file(atom_filename)
+        console.log('Output RSS feed to %s' % atom_filename)
+
+
+def _parse_argv():
+    global cur_dir, script_dir
+    config = {}
+
+    # load configuration from default config file if exists
+    default_config_path = path.join(script_dir, 'config.json')
+    if path.isfile(default_config_path):
+        with open(default_config_path, 'r') as fd:
+            config.update(json.load(fd))
+
+    # print(sys.argv)
+    try:
+        opts, wids = getopt.getopt(
+                sys.argv[1:],
+                'hc:',
+                ['help', 'config=', 'db-host=', 'db-user=', 'db-password=', 'db-database=', 'message-path=', 'message-types=', 'feed-max=', 'feed-path=']
+            )
+
+    except getopt.GetoptError:
+        _show_help()
+
+    argv_config = {}
+    config['message_type'] = path.join(cur_dir, 'messages/')
+
+    # print(opts)
+    for opt, arg in opts:
+        # print(opt,arg)
+        if opt in ['-h', '--help']:
+            _show_help()
+        elif opt in ['-c', '--config']:
+            try:
+                with open(arg, 'r') as fd:
+                    config.update(json.load(fd))
+            except:
+                _show_help('Failed to load custom configurations from given path.')
+        elif opt == '--db-host':
+            argv_config['db_host'] = arg
+        elif opt == '--db-user':
+            argv_config['db_user'] = arg
+        elif opt == '--db-password':
+            argv_config['db_password'] = arg
+        elif opt == '--db-database':
+            argv_config['db_database'] = arg
+        elif opt == '--message-path':
+            argv_config['message_path'] = _get_abspath(arg, cur_dir)
+        elif opt == '--message-types':
+            argv_config['message_types'] = argv.upper().split(',')
+        elif opt == '--feed-path':
+            argv_config['feed_path'] = _get_abspath(arg, cur_dir)
+        elif opt == '--feed-max':
+            argv_config['feed_max'] = int(arg)
+        elif opt == '--feed-ignore-check':
+            argv_config['feed_ignore_check'] = True
+
+    if len(wids) == 0:
+        _show_help('No wechat id was given.')
+
+    config.update(argv_config)
+    config['cur_dir'] = cur_dir
+    config['script_dir'] = script_dir
+
+    return config, wids
+
+
+def _get_abspath(p, base_dir):
+    if p.startswith('/'):
+        return p
+    else:
+        return path.join(base_dir, p)
+
+
+def _show_help(msg=''):
+    if msg != '':
+        console.error(msg)
+    console.log('main.py -[hc] <wechat_ids...>')
+    sys.exit(2)
 
 
 if __name__ == '__main__':
-    try:
-        wid = sys.argv[1]
-        print("wechat_id = %s" % (wid))
-    except:
-        print('No wechatid provided.')
-        sys.exit(2)
+    global conn, wechats
 
-    try:
-        with open('config.json', 'r') as fd:
-            config = json.load(fd)
-
-        mysql_config = config['mysql']
-
-        message_config = config.get('message', {})
-        message_config['path'] = message_config.get('path', 'messages/')
-
-        feed_config = config.get('feed', {})
-        feed_config['path'] = feed_config.get('path', 'feeds/')
-        feed_config['max'] = int(feed_config.get('max', 40))
-        feed_config['message_types'] = feed_config.get('messageTypes', ['POST'])
-        feed_config['force'] = feed_config.get('force', False)
-    except:
-        print('Failed to load `config.json` or invalid configuration.')
-        sys.exit(2)
+    config, wids = _parse_argv()
 
     conn = pymysql.connect(
-            host=mysql_config['host'],
-            user=mysql_config['user'],
-            passwd=mysql_config['password'],
-            db=mysql_config['db'],
+            host=config.get('db_host', 'localhost'),
+            user=config.get('db_user', 'root'),
+            passwd=config.get('db_password', ''),
+            db=config.get('db_database', 'wechat'),
             charset='utf8mb4',
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=True
            )
+    wechats = WechatSogouApi()
 
     try:
-        has_new_messages = retrieve_messages(wid, conn, message_config)
-        if  has_new_messages or feed_config['force']:
-            print("Generating feed...")
-            generate_feed(wid, conn, message_config, feed_config)
-        else:
-            print("No new messages.")
+        for wid in wids:
+            has_new_messages = retrieve_messages(wid, config)
+            if  has_new_messages or config.get('feed_ignore_check', False):
+                console.log("Generating feed for wechat_id=%s..." % wid, end='')
+                generate_feed(wid, config)
+                console.success('SUCCESS', wrap='[]')
+            else:
+                console.success("No new messages.")
 
     finally:
         conn.close()
