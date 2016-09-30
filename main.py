@@ -181,50 +181,49 @@ def generate_feed(wid, config):
             # TODO Support other message types
             (wid, ['POST'], config.get('feed_max', 20))
         )
+        messages = c.fetchall()
 
-        fg = FeedGenerator()
-        fg.id('wechat-%s' % wid)
-        fg.title(account['name'])
-        fg.subtitle(account['intro'])
-        fg.link(href='http://feeds.feedburner.com/wechat-%s' % wid, rel='self')
-        fg.logo(account['image'])
+    fg = FeedGenerator()
+    fg.id('wechat-%s' % wid)
+    fg.title(account['name'])
+    fg.subtitle(account['intro'])
+    fg.link(href='http://feeds.feedburner.com/wechat-%s' % wid, rel='self')
+    fg.logo(account['image'])
 
-        message = c.fetchone()
-        while message != None:
-            mid = message['id']
-            filename = path.join(_get_abspath(config.get('message_path', 'messages/'), cur_dir),
-                                 wid + '_' + mid + '.json')
-            with open(filename, 'r') as fd:
-                message_details = json.load(fd)
+    for message in messages:
+        mid = message['id']
+        filename = path.join(_get_abspath(config.get('message_path', 'messages/'), cur_dir),
+                             wid + '_' + mid + '.json')
+        with open(filename, 'r') as fd:
+            message_details = json.load(fd)
 
-            if message_details:
-                fe = fg.add_entry()
-                fe.id(message_details['url'])
-                fe.title(message_details['title'])
-                fe.author(name=wid, email=message_details['author'])
-                fe.link(href=message_details['url'])
+        if message_details:
+            fe = fg.add_entry()
+            fe.id(message_details['url'])
+            fe.title(message_details['title'])
+            fe.author(name=wid, email=message_details['author'])
+            fe.link(href=message_details['url'])
 
-                content = re.sub(r'(amp;|\s*data-[\w-]+="[^"]*"|\s*line-height:[^;]*;)', '',
-                                 message_details['content'].replace('data-src', 'src'),
-                                 flags=re.IGNORECASE)
-                if message_details['cover'] != '':
-                    content = '<img src="'+ message_details['cover'] + '" />' + content
-                fe.content(content)
+            content = re.sub(r'(amp;|\s*data-[\w-]+="[^"]*"|\s*line-height:[^;]*;)', '',
+                             message_details['content'].replace('data-src', 'src'),
+                             flags=re.IGNORECASE)
+            if message_details['cover'] != '':
+                content = '<img src="'+ message_details['cover'] + '" />' + content
+            fe.content(content)
 
-                dt = datetime.fromtimestamp(message['datetime'], dateutil.tz.gettz(name='Asia/Shanghai'))
-                # fe.updated(dt)
-                fe.pubdate(dt)
+            dt = datetime.fromtimestamp(message['datetime'], dateutil.tz.gettz(name='Asia/Shanghai'))
+            # fe.updated(dt)
+            fe.pubdate(dt)
 
-            else:
-                console.log("[%s] message does not exist << %s", (mid, filename))
+        else:
+            console.log("[%s] message does not exist << %s", (mid, filename))
 
-            message = c.fetchone()
 
-        rss_feed = fg.rss_str(pretty=True)
-        rss_filename = path.join(_get_abspath(config.get('feed_path', 'feeds/'), cur_dir),
-                                  'wechat-' + wid + '.xml')
-        fg.rss_file(rss_filename)
-        console.log('Output RSS feed to %s' % rss_filename)
+    rss_feed = fg.rss_str(pretty=True)
+    rss_filename = path.join(_get_abspath(config.get('feed_path', 'feeds/'), cur_dir),
+                              'wechat-' + wid + '.xml')
+    fg.rss_file(rss_filename)
+    console.log('Output RSS feed to %s' % rss_filename)
 
 
 def _parse_argv():
