@@ -142,7 +142,8 @@ def retrieve_messages(wid, config):
             message['thumb'] = m.get('thumb', '')
             message['src'] = m.get('video_src', '')
 
-        filename = _get_abspath(config.get('message_path', 'messages/'), cur_dir) + wid + '_' + mid + '.json'
+        filename = path.join(_get_abspath(config.get('message_path', 'messages/'), cur_dir),
+                             wid + '_' + mid + '.json')
         with open(filename, 'w') as fd:
             json.dump(message, fd)
 
@@ -182,7 +183,8 @@ def generate_feed(wid, config):
         message = c.fetchone()
         while message != None:
             mid = message['id']
-            filename = _get_abspath(config.get('message_path', 'messages/'), cur_dir) + wid + '_' + mid + '.json'
+            filename = path.join(_get_abspath(config.get('message_path', 'messages/'), cur_dir),
+                                 wid + '_' + mid + '.json')
             with open(filename, 'r') as fd:
                 message_details = json.load(fd)
 
@@ -203,7 +205,8 @@ def generate_feed(wid, config):
             message = c.fetchone()
 
         atom_feed = fg.atom_str(pretty=True)
-        atom_filename = _get_abspath(config.get('feed_path', 'feeds/'), cur_dir) + 'wechat-' + wid + '.atom'
+        atom_filename = path.join(_get_abspath(config.get('feed_path', 'feeds/'), cur_dir),
+                                  'wechat-' + wid + '.atom')
         fg.atom_file(atom_filename)
         console.log('Output RSS feed to %s' % atom_filename)
 
@@ -306,9 +309,8 @@ if __name__ == '__main__':
         for wid in wids:
             has_new_messages = retrieve_messages(wid, config)
             if  has_new_messages or config.get('feed_ignore_check', False):
-                console.log("Generating feed for wechat_id=%s..." % wid, end='')
+                console.log("Generating feed for wechat_id=%s..." % wid)
                 generate_feed(wid, config)
-                console.success('SUCCESS', wrap='[]')
             else:
                 console.success("No new messages.")
 
