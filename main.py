@@ -223,7 +223,7 @@ def _parse_argv():
         opts, wids = getopt.getopt(
                 sys.argv[1:],
                 'hc:',
-                ['help', 'config=', 'db-host=', 'db-user=', 'db-password=', 'db-database=', 'message-path=', 'message-types=', 'feed-max=', 'feed-path=']
+                ['help', 'config=', 'db-host=', 'db-user=', 'db-password=', 'db-database=', 'message-path=', 'message-types=', 'feed-max=', 'feed-path=', 'feed-ignore-check']
             )
 
     except getopt.GetoptError:
